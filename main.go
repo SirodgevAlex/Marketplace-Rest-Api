@@ -3,15 +3,19 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
+	"github.com/dgrijalva/jwt-go"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net/http"
 	"regexp"
-	"github.com/gorilla/mux"
-	"github.com/dgrijalva/jwt-go"
+	"strconv"
+	"strings"
 	"time"
-	_ "github.com/lib/pq"
 	"unicode"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
@@ -21,12 +25,12 @@ type User struct {
 }
 
 type Ad struct {
-	Id        int
-	UserId    int
-	Title     string
-	Text      string
-	ImageURL  string
-	Price     int
+	Id       int
+	UserId   int
+	Title    string
+	Text     string
+	ImageURL string
+	Price    int
 }
 
 var db *sql.DB
@@ -51,39 +55,40 @@ func main() {
 
 	router.HandleFunc("/register", register).Methods("POST")
 	router.HandleFunc("/login", login).Methods("POST")
+	router.HandleFunc("/create-ad", createAd).Methods("POST")
 
 	log.Fatal(http.ListenAndServe(":8080", router))
 }
 
 func isEmailValid(email string) bool {
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
-    return emailRegex.MatchString(email)
+	return emailRegex.MatchString(email)
 }
 
 func isPasswordSafe(password string) bool {
 	if len(password) < 8 {
-        return false
-    }
+		return false
+	}
 
-    hasUpper := false
-    hasLower := false
-    hasDigit := false
-    hasSpecial := false
+	hasUpper := false
+	hasLower := false
+	hasDigit := false
+	hasSpecial := false
 
-    for _, char := range password {
-        switch {
-        case unicode.IsUpper(char):
-            hasUpper = true
-        case unicode.IsLower(char):
-            hasLower = true
-        case unicode.IsDigit(char):
-            hasDigit = true
-        case unicode.IsPunct(char) || unicode.IsSymbol(char):
-            hasSpecial = true
-        }
-    }
+	for _, char := range password {
+		switch {
+		case unicode.IsUpper(char):
+			hasUpper = true
+		case unicode.IsLower(char):
+			hasLower = true
+		case unicode.IsDigit(char):
+			hasDigit = true
+		case unicode.IsPunct(char) || unicode.IsSymbol(char):
+			hasSpecial = true
+		}
+	}
 
-    return hasUpper && hasLower && hasDigit && hasSpecial
+	return hasUpper && hasLower && hasDigit && hasSpecial
 }
 
 func register(w http.ResponseWriter, r *http.Request) {
@@ -126,45 +131,67 @@ func register(w http.ResponseWriter, r *http.Request) {
 }
 
 type Claims struct {
-    Email string `json:"email"`
-    jwt.StandardClaims
+	Email string `json:"email"`
+	jwt.StandardClaims
 }
 
 func login(w http.ResponseWriter, r *http.Request) {
 	var user User
-    if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
-        http.Error(w, err.Error(), http.StatusBadRequest)
-        return
-    }
+	if err := json.NewDecoder(r.Body).Decode(&user); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
-    var hashedPassword string
-    err := db.QueryRow("SELECT password FROM users WHERE email = $1", user.Email).Scan(&hashedPassword)
-    if err != nil {
-        http.Error(w, err.Error(), http.StatusUnauthorized)
-        return
-    }
+	var hashedPassword string
+	err := db.QueryRow("SELECT password FROM users WHERE email = $1", user.Email).Scan(&hashedPassword)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
-    if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(user.Password)); err != nil {
-        http.Error(w, err.Error(), http.StatusUnauthorized)
-        return
-    }
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(user.Password)); err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
 
-    expirationTime := time.Now().Add(5 * time.Minute)
-    claims := &Claims{
-        Email: user.Email,
-        StandardClaims: jwt.StandardClaims{
-            ExpiresAt: expirationTime.Unix(),
-        },
-    }
-    token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    tokenString, err := token.SignedString(jwtKey)
-    if err != nil {
-        http.Error(w, "Ошибка генерации токена", http.StatusInternalServerError)
-        return
-    }
+	expirationTime := time.Now().Add(5 * time.Minute)
+	claims := &Claims{
+		Email: user.Email,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString(jwtKey)
+	if err != nil {
+		http.Error(w, "Ошибка генерации токена", http.StatusInternalServerError)
+		return
+	}
 
-    w.Header().Set("Content-Type", "application/json")
-    json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"token": tokenString})
+}
+
+func extractUserIDFromToken(r *http.Request) (int, error) {
+	tokenString := r.Header.Get("Authorization")
+	tokenString = strings.Replace(tokenString, "Bearer ", "", 1)
+
+	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtKey, nil
+	})
+	if err != nil {
+		return 0, fmt.Errorf("ошибка при парсинге токена: %v", err)
+	}
+
+	if claims, ok := token.Claims.(*Claims); ok && token.Valid {
+		userID, err := strconv.Atoi(claims.Subject)
+		if err != nil {
+			return 0, fmt.Errorf("ошибка при извлечении идентификатора пользователя из токена: %w", err)
+		}
+		return userID, nil
+	}
+
+	return 0, errors.New("невозможно извлечь идентификатор пользователя из токена")
 }
 
 func createAd(w http.ResponseWriter, r *http.Request) {
@@ -210,3 +237,5 @@ func createAd(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ad)
 }
+
+
