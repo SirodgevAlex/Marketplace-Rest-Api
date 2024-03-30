@@ -22,7 +22,6 @@ go run main.go
 ```
 
 3. Все, мы все запустили, можно делать сами запросы
-
 4. Запрос для создания пользователя
 
 ```bash
@@ -30,6 +29,7 @@ curl -i -X POST http://localhost:8080/register \
 -H 'Content-Type: application/json' \
 -d '{"Email": "sirodgev@yandex.ru", "Password": "Sneeeir1_"}'
 ```
+
 получим в ответ такой результат
 
 ```bash
@@ -49,7 +49,7 @@ curl -i -X POST http://localhost:8080/login \
 -d '{"Email": "sirodgev@yandex.ru", "Password": "Sneeeir1_"}'
 ```
 
-получим в ответ такой результат
+получим в ответ такой результат. P S токены разные будут, можно скопировать из терминала токен из результат, потом вставить его в след запрос. Тогда все будет хорошо, объявление создастся
 
 ```bash
 HTTP/1.1 200 OK
@@ -57,7 +57,7 @@ Content-Type: application/json
 Date: Thu, 28 Mar 2024 19:05:49 GMT
 Content-Length: 158
 
-{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNpcm9kZ2V2dkB5YW5kZXgucnUiLCJleHAiOjE3MTE2NTMwNDl9.Fq53ihagDLfCUhvrGOMVYR1bnMfVx7UHD9wlAVZLnh8"}
+{"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNpcm9kZ2V2QHlhbmRleC5ydSIsImV4cCI6MTcxMTgwOTEyM30.m5JXoKxeySEZlfkMIAw2bPZ4TFQUUNs31oh36Z3LpKs"}
 ```
 
 6. Запрос для создания объявления
@@ -65,6 +65,6 @@ Content-Length: 158
 ```bash
 curl -i -X POST http://localhost:8080/create-ad \
 -H 'Content-Type: application/json' \
--H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNpcm9kZ2VAeWFuZGV4LnJ1IiwiZXhwIjoxNzExNjU0Mjc0fQ.6ytapN2fThQq9QrLXa47G8hw725PvOiI9wRuSRW8PmI' \
+-H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6InNpcm9kZ2V2QHlhbmRleC5ydSIsImV4cCI6MTcxMTgxNDA0NCwic3ViIjoiMSJ9.SYFbHFoG0f09bSop0Manl6iEL4hHIRFG_nOu67os8_s' \
 -d '{"Title": "bmx", "Text": "Really nice bmx", "ImageURL" : "https://example.com/image.jpg", "price" : 1000}'
 ```

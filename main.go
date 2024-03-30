@@ -5,10 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dgrijalva/jwt-go"
-	"github.com/gorilla/mux"
-	_ "github.com/lib/pq"
-	"golang.org/x/crypto/bcrypt"
 	"log"
 	"net/http"
 	"regexp"
@@ -16,6 +12,11 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/dgrijalva/jwt-go"
+	"github.com/gorilla/mux"
+	_ "github.com/lib/pq"
+	"golang.org/x/crypto/bcrypt"
 )
 
 type User struct {
@@ -154,10 +155,18 @@ func login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var userId int
+	err = db.QueryRow("SELECT Id FROM users WHERE email = $1", user.Email).Scan(&userId)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
+	}
+
 	expirationTime := time.Now().Add(5 * time.Minute)
 	claims := &Claims{
 		Email: user.Email,
 		StandardClaims: jwt.StandardClaims{
+			Subject: strconv.Itoa(userId),
 			ExpiresAt: expirationTime.Unix(),
 		},
 	}
@@ -179,6 +188,7 @@ func extractUserIDFromToken(r *http.Request) (int, error) {
 	token, err := jwt.ParseWithClaims(tokenString, &Claims{}, func(token *jwt.Token) (interface{}, error) {
 		return jwtKey, nil
 	})
+
 	if err != nil {
 		return 0, fmt.Errorf("ошибка при парсинге токена: %v", err)
 	}
@@ -200,6 +210,8 @@ func createAd(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Пользователь не авторизован", http.StatusUnauthorized)
 		return
 	}
+
+	fmt.Println(err)
 
 	var ad Ad
 	err = json.NewDecoder(r.Body).Decode(&ad)
@@ -226,7 +238,7 @@ func createAd(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	query := "INSERT INTO ads (user_id, title, text, image_url, price) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+	query := "INSERT INTO ads (UserId, Title, Text, ImageUrl, Price) VALUES ($1, $2, $3, $4, $5) RETURNING Id"
 	err = db.QueryRow(query, userID, ad.Title, ad.Text, ad.ImageURL, ad.Price).Scan(&ad.Id)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
